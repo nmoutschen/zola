@@ -9,6 +9,7 @@ use rendering::{render_content, RenderContext};
 use tera::{
     to_value, try_get_value, Error as TeraError, Filter as TeraFilter, Result as TeraResult, Tera,
     Value,
+    get_json_pointer,
 };
 
 use crate::load_tera;
@@ -109,6 +110,35 @@ impl TeraFilter for NumFormatFilter {
         })?;
         Ok(to_value(num.to_formatted_string(&locale)).unwrap())
     }
+}
+
+/// Negative version of the Tera built-in filter
+pub fn nfilter(value: &Value, args: &HashMap<String, Value>) -> TeraResult<Value> {
+    let mut arr = try_get_value!("filter", "value", Vec<Value>, value);
+    if arr.is_empty() {
+        return Ok(arr.into());
+    }
+
+    let key = match args.get("attribute") {
+        Some(val) => try_get_value!("filter", "attribute", String, val),
+        None => return Err(TeraError::msg("The `filter` filter has to have an `attribute` argument")),
+    };
+    let value = args.get("value").unwrap_or(&Value::Null);
+
+    let json_pointer = get_json_pointer(&key);
+    arr = arr
+        .into_iter()
+        .filter(|v| {
+            let val = v.pointer(&json_pointer).unwrap_or(&Value::Null);
+            if value.is_null() {
+                !val.is_null()
+            } else {
+                val != value
+            }
+        })
+        .collect::<Vec<_>>();
+
+    Ok(to_value(arr).unwrap())
 }
 
 #[cfg(test)]
